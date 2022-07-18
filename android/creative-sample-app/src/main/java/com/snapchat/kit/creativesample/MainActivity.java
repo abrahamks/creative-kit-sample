@@ -12,18 +12,25 @@ import com.snapchat.kit.sdk.creative.models.SnapLiveCameraContent;
 import com.snapchat.kit.sdk.creative.models.SnapPhotoContent;
 import com.snapchat.kit.sdk.creative.models.SnapVideoContent;
 
+import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Picasso.LoadedFrom;
+import com.squareup.picasso.Target;
+
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Drawable;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.Environment;
 import android.provider.MediaStore;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.CompoundButton;
@@ -44,7 +51,8 @@ public class MainActivity extends AppCompatActivity {
     public enum SnapState {
         NO_SNAP("Clear Snap"),
         IMAGE("Select Image"),
-        VIDEO("Select Video");
+        VIDEO("Select Video"),
+        URL("Download from URL");
 
         private String mOptionText;
 
@@ -120,9 +128,9 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 try {
                     final SnapContent content;
-
                     switch (mSnapState) {
                         case IMAGE:
+                        case URL:
                             content = new SnapPhotoContent(snapMediaFactory.getSnapPhotoFromFile(mSnapFile));
                             break;
                         case VIDEO:
@@ -180,6 +188,37 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private Target getTarget() {
+        return new Target() {
+            @Override
+            public void onBitmapLoaded(Bitmap bitmap, LoadedFrom from) {
+
+                try {
+                    File tempFile = File.createTempFile("snap_test", null, getApplicationContext().getCacheDir());
+                    try (FileOutputStream outputStream = new FileOutputStream(tempFile)) {
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
+                    }
+                    InputStream inputStream = getContentResolver().openInputStream(Uri.fromFile(tempFile));
+                    Bitmap sentBitmap = BitmapFactory.decodeStream(inputStream);
+                    copyFile(inputStream, mSnapFile);
+                    mPreviewImage.setImageBitmap(sentBitmap);
+                } catch (IOException e) {
+                    Log.e("IOException", e.getLocalizedMessage());
+                }
+            }
+
+            @Override
+            public void onBitmapFailed(Exception e, Drawable errorDrawable) {
+
+            }
+
+            @Override
+            public void onPrepareLoad(Drawable placeHolderDrawable) {
+
+            }
+        };
+    }
+
     private void openMediaSelectDialog() {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.select_dialog_item);
 
@@ -192,6 +231,9 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         switch (SnapState.values()[which]) {
+                            case URL:
+                                saveImageFromUrl();
+                                break;
                             case IMAGE:
                                 selectMediaFromGallery("image/*", SnapState.IMAGE.getRequestCode());
                                 break;
@@ -204,6 +246,11 @@ public class MainActivity extends AppCompatActivity {
                     }
                 })
                 .show();
+    }
+
+    private void saveImageFromUrl() {
+        Picasso.get().load("https://i.imgur.com/DvpvklR.png").into(getTarget());
+        mSnapState = SnapState.URL;
     }
 
     private void selectMediaFromGallery(String mimeType, int resultCode) {
